@@ -72,6 +72,11 @@ class CommissionOutput(BaseModel):
     total_sales: float
     commission: float
 
+class MonthlySalesOutput(BaseModel):
+    month: str
+    total_sales: float
+    num_sales: int
+
 
 # Dependencies
 def get_db():
@@ -190,3 +195,17 @@ def store_commission(store_id: int, db: Session = Depends(get_db), user: dict = 
         row.commission = round(row.commission, 2)
 
     return sorted(report.values(), key=lambda x: x.commission, reverse=True)
+
+@app.get("/stores/{store_id}/monthly-sales", response_model=list[MonthlySalesOutput])
+def store_monthly_outputs(store_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    check_store_access(user, store_id)
+    month = func.strftime("%Y-%m", Sale.created_at)
+    query = (
+        select(month.label("month"), func.sum(Sale.amount).label("total_sales"), func.count(Sale.id).label("num_sales"))
+        .join(Representative)
+        .where(Representative.store_id == store_id)
+        .group_by(month)
+        .order_by(month)
+    )
+
+    return [MonthlySalesOutput(month=m, total_sales=ts, num_sales=ns) for m, ts, ns in db.execute(query)]
